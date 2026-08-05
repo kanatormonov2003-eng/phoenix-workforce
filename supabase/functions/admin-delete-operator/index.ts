@@ -4,49 +4,20 @@ import { corsHeaders, json } from '../_shared/cors.ts';
 Deno.serve(async (req) => {
   const origin = req.headers.get('Origin');
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(origin) });
-
   let actorId: string;
-  try {
-    actorId = (await requireAdmin(req)).id;
-  } catch (e) {
-    const msg = (e as Error).message;
-    return json({ error: msg }, statusFor(msg), origin);
-  }
-
-  const { employeeId } = (await req.json()) as { employeeId: string };
-  if (!employeeId) return json({ error: 'employeeId is required' }, 422, origin);
-
+  try { actorId = (await requireAdmin(req)).id; } catch (e) { const msg = (e as Error).message; return json({ error: msg }, statusFor(msg), origin); }
+  let body: { employeeId?: string };
+  try { body = await req.json(); } catch { return json({ error: 'INVALID_JSON' }, 400, origin); }
+  if (!body.employeeId || !/^[0-9a-f-]{36}$/i.test(body.employeeId)) return json({ error: 'INVALID_EMPLOYEE_ID' }, 422, origin);
   const admin = adminClient();
-
-  const { data: employee } = await admin
-    .from('employees')
-    .select('id, user_id, profiles:user_id ( email, role )')
-    .eq('id', employeeId)
-    .maybeSingle();
-
+  const { data: employee } = await admin.from('employees').select('id,user_id').eq('id', body.employeeId).is('deleted_at', null).maybeSingle();
   if (!employee) return json({ error: 'NOT_FOUND' }, 404, origin);
-
-  const profile = employee.profiles as unknown as { email: string; role: string } | null;
-  if (profile?.role === 'admin') return json({ error: 'CANNOT_DELETE_ADMIN' }, 409, origin);
-
-  // Закрываем открытую смену, чтобы отчёты остались консистентными
-  await admin
-    .from('shifts')
-    .update({ ended_at: new Date().toISOString(), status: 'auto_closed', closed_by: actorId })
-    .eq('employee_id', employeeId)
-    .eq('status', 'online');
-
-  await admin.from('audit_log').insert({
-    actor_id: actorId,
-    action: 'delete',
-    entity: 'employee',
-    entity_id: employeeId,
-    diff: { email: profile?.email ?? null },
-  });
-
-  // Удаление auth-пользователя каскадом снесёт profile → employee → shifts
-  const { error } = await admin.auth.admin.deleteUser(employee.user_id);
-  if (error) return json({ error: error.message }, 500, origin);
-
-  return json({ ok: true }, 200, origin);
+  const { error: archiveError } = await admin.from('employees').update({ active: false, blocked_at: new Date().toISOString(), blocked_reason: 'archived', deleted_at: new Date().toISOString() }).eq('id', employee.id);
+  if (archiveError) return json({ error: 'ARCHIVE_FAILED' }, 500, origin);
+  await admin.from('profiles').update({ is_active: false, deleted_at: new Date().toISOString() }).eq('id', employee.user_id);
+  await admin.from('shifts').update({ ended_at: new Date().toISOString(), status: 'auto_closed', closed_by: actorId }).eq('employee_id', employee.id).eq('status', 'online');
+  await admin.from('audit_log').insert({ actor_id: actorId, action: 'archive', entity: 'employee', entity_id: employee.id, diff: { reason: 'admin_archive' } });
+  const { error } = await admin.auth.admin.updateUserById(employee.user_id, { ban_duration: '876000h' });
+  if (error) return json({ error: 'AUTH_ARCHIVE_FAILED' }, 500, origin);
+  return json({ ok: true, archived: true }, 200, origin);
 });
