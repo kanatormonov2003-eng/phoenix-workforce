@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg:          0.145 0.010 322;
+    --bg-deep:     0.115 0.010 322;
+    --surface-1:   0.185 0.012 322;
+    --surface-2:   0.225 0.013 322;
+    --surface-3:   0.275 0.014 322;
+    --line:        0.315 0.013 322;
+    --line-soft:   0.245 0.012 322;
+
+    --text:        0.955 0.005 322;
+    --text-2:      0.745 0.010 322;
+    --text-3:      0.575 0.013 322;
+
+    --ember:       0.665 0.185 32;
+    --ember-hi:    0.735 0.170 40;
+    --ember-dim:   0.325 0.085 32;
+    --ember-ghost: 0.225 0.045 32;
+
+    --online:      0.780 0.150 158;
+    --online-dim:  0.300 0.058 158;
+    --warn:        0.815 0.128 82;
+    --warn-dim:    0.310 0.055 82;
+    --danger:      0.640 0.170 25;
+    --danger-dim:  0.300 0.100 25;
+    --info:        0.730 0.090 262;
+
+    --radius: 0.8125rem;
+  }
+
+  * { @apply border-line-soft; }
+
+  html { -webkit-tap-highlight-color: transparent; }
+
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    font-weight: 350;
+    letter-spacing: 0.011em;
+    font-optical-sizing: auto;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-semibold tracking-[-0.018em];
+    text-wrap: balance;
+  }
+
+  p { text-wrap: pretty; }
+
+  ::selection { @apply bg-ember-dim text-ink; }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ember-hi ring-offset-2 ring-offset-bg rounded-xs;
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-surface-3 rounded-full;
+    border: 3px solid oklch(var(--bg));
+  }
+
+  input[type='date'], input[type='time'] { color-scheme: dark; }
+}
+
+@layer components {
+  .eyebrow {
+    @apply text-[0.6875rem] font-semibold uppercase tracking-[0.11em] text-ink-3;
+  }
+  .num {
+    @apply font-mono tabular-nums tracking-[-0.02em];
+  }
+  .panel {
+    @apply rounded-lg border border-line-soft bg-surface-1 overflow-hidden;
+  }
+  .panel-head {
+    @apply flex items-center gap-3 px-5 py-4 border-b border-line-soft;
+  }
+  .skeleton {
+    @apply relative overflow-hidden rounded-xs bg-surface-2;
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0 animate-shimmer;
+    background: linear-gradient(90deg, transparent, oklch(0.30 0.014 322 / 0.7), transparent);
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

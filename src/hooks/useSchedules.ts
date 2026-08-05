@@ -1,0 +1,71 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
+import type { DailyScheduleInput } from '@/schemas/schedule.schema';
+import type { ScheduleFeedRow } from '@/types/domain';
+
+export interface ScheduleFilters {
+  employeeId?: string;
+  date?: string;
+  project?: string;
+}
+
+export function useScheduleFeed(filters: ScheduleFilters) {
+  return useQuery({
+    queryKey: ['schedule-feed', filters],
+    queryFn: async (): Promise<ScheduleFeedRow[]> => {
+      let q = supabase.from('v_schedule_feed').select('*').order('work_date', { ascending: false });
+      if (filters.employeeId) q = q.eq('employee_id', filters.employeeId);
+      if (filters.date) q = q.eq('work_date', filters.date);
+      if (filters.project) q = q.eq('project', filters.project);
+      const { data, error } = await q.limit(300);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
+export function useSaveDailySchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: DailyScheduleInput) => {
+      const { data, error } = await supabase.rpc('save_daily_schedule', {
+        p_work_date: input.workDate,
+        p_planned_start: input.plannedStart,
+        p_planned_end: input.plannedEnd,
+        p_extra_hours: input.extraHours,
+        p_reason: input.reason,
+        p_comment: input.comment,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (_d, input) => {
+      toast.success('График сохранён', {
+        description:
+          input.extraHours > 4
+            ? 'Доп. часы свыше 4 отправлены на подтверждение руководителю.'
+            : `${input.plannedStart} – ${input.plannedEnd}, доп. ${input.extraHours} ч.`,
+      });
+      void qc.invalidateQueries({ queryKey: ['schedule'] });
+      void qc.invalidateQueries({ queryKey: ['schedule-feed'] });
+    },
+  });
+}
+
+export function useReviewSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: 'approved' | 'rejected' }) => {
+      const { error } = await supabase
+        .from('daily_schedules')
+        .update({ status, reviewed_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: (_d, v) => {
+      toast.success(v.status === 'approved' ? 'График подтверждён' : 'График отклонён');
+      void qc.invalidateQueries({ queryKey: ['schedule-feed'] });
+    },
+  });
+}
