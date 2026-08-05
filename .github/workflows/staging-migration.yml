@@ -9,8 +9,8 @@ permissions:
 
 jobs:
   staging:
-    # Fork PRs do not receive secrets. They still get CI from security.yml.
-    if: ${{ github.event_name == 'workflow_dispatch' || (secrets.SUPABASE_ACCESS_TOKEN != '' && secrets.SUPABASE_STAGING_PROJECT_REF != '') }}
+    # GitHub does not expose secrets to fork PRs. Same-repository PRs and manual runs may use staging secrets.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -23,7 +23,8 @@ jobs:
       - name: Link staging project
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase link --project-ref "${{ secrets.SUPABASE_STAGING_PROJECT_REF }}"
+          SUPABASE_STAGING_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+        run: test -n "$SUPABASE_ACCESS_TOKEN" && test -n "$SUPABASE_STAGING_PROJECT_REF" && supabase link --project-ref "$SUPABASE_STAGING_PROJECT_REF"
       - name: Lint database
         run: supabase db lint
       - name: Validate migration plan
