@@ -7,7 +7,7 @@ module.exports = {
     'plugin:react-hooks/recommended',
   ],
   parser: '@typescript-eslint/parser',
-  parserOptions: { project: ['./tsconfig.json'], tsconfigRootDir: __dirname },
+  parserOptions: { project: ['./tsconfig.eslint.json'], tsconfigRootDir: __dirname },
   plugins: ['react-refresh'],
   ignorePatterns: ['dist', 'supabase/functions', '.eslintrc.cjs'],
   rules: {
