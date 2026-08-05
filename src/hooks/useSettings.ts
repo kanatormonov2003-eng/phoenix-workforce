@@ -1,16 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import { safeFunctionsInvoke, safeQuerySingle } from '@/lib/supabase-safe';
 import type { TelegramSettingsInput } from '@/schemas/settings.schema';
-import type { NotificationSettings } from '@/types/domain';
+import type { Database } from '@/types/database';
+
+type NotificationSettings = Database['public']['Tables']['notification_settings']['Row'];
+interface TelegramTestResponse { ok: boolean; }
 
 export function useNotificationSettings() {
   return useQuery({
     queryKey: ['notification-settings'],
     queryFn: async (): Promise<NotificationSettings | null> => {
-      const { data, error } = await supabase.from('notification_settings').select('*').maybeSingle();
-      if (error) throw error;
-      return data;
+      const result = await supabase.from('notification_settings').select('*').maybeSingle();
+      return safeQuerySingle<NotificationSettings>(result);
     },
   });
 }
@@ -18,8 +21,8 @@ export function useNotificationSettings() {
 export function useSaveNotificationSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: TelegramSettingsInput) => {
-      const { error } = await supabase.from('notification_settings').upsert({
+    mutationFn: async (input: TelegramSettingsInput): Promise<void> => {
+      const result = await supabase.from('notification_settings').upsert({
         id: true,
         telegram_enabled: input.telegramEnabled,
         telegram_chat_id: input.telegramChatId || null,
@@ -28,8 +31,8 @@ export function useSaveNotificationSettings() {
         notify_on_end: input.notifyOnEnd,
         notify_on_late: input.notifyOnLate,
         updated_at: new Date().toISOString(),
-      });
-      if (error) throw error;
+      }).select('*').maybeSingle();
+      safeQuerySingle<NotificationSettings>(result);
     },
     onSuccess: () => {
       toast.success('Настройки сохранены');
@@ -40,11 +43,10 @@ export function useSaveNotificationSettings() {
 
 export function useTestTelegram() {
   return useMutation({
-    mutationFn: async (chatId: string) => {
-      const { error } = await supabase.functions.invoke('telegram-notify', {
-        body: { chat_id: chatId, text: '✅ <b>Phoenix</b>\nТестовое сообщение. Канал работает.' },
-      });
-      if (error) throw error;
+    mutationFn: async (_ignoredChatId?: string): Promise<void> => {
+      const result = await supabase.functions.invoke<TelegramTestResponse>('telegram-test', { body: {} });
+      const response = safeFunctionsInvoke<TelegramTestResponse>(result);
+      if (!response.ok) throw new Error('TELEGRAM_TEST_FAILED');
     },
     onSuccess: () => toast.success('Тестовое сообщение отправлено'),
   });

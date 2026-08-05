@@ -1,52 +1,22 @@
-import { adminClient } from '../_shared/auth.ts';
+import { adminClient, requireAdmin, statusFor } from '../_shared/auth.ts';
 import { corsHeaders, json } from '../_shared/cors.ts';
 
-const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
-
-interface Payload {
-  chat_id?: string;
-  text: string;
-  log_id?: string;
-}
-
+function escapeHtml(value: string): string { return value.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
 Deno.serve(async (req) => {
   const origin = req.headers.get('Origin');
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(origin) });
-
-  if (!BOT_TOKEN) {
-    return json({ error: 'TELEGRAM_BOT_TOKEN не задан' }, 500, origin);
-  }
-
-  const body = (await req.json()) as Payload;
+  try { await requireAdmin(req); } catch (e) { const msg=(e as Error).message; return json({ error: msg }, statusFor(msg), origin); }
+  const token = Deno.env.get('TELEGRAM_BOT_TOKEN');
+  if (!token) return json({ error: 'TELEGRAM_NOT_CONFIGURED' }, 503, origin);
   const admin = adminClient();
-
-  let chatId = body.chat_id;
-  if (!chatId) {
-    const { data } = await admin.from('notification_settings').select('telegram_chat_id').maybeSingle();
-    chatId = data?.telegram_chat_id ?? Deno.env.get('TELEGRAM_CHAT_ID') ?? undefined;
-  }
-  if (!chatId) return json({ error: 'CHAT_ID не настроен' }, 422, origin);
-
-  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: body.text,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    }),
-  });
-
-  const result = (await res.json()) as { ok: boolean; description?: string };
-
-  if (body.log_id) {
-    await admin
-      .from('notification_log')
-      .update({ delivered: result.ok, error: result.ok ? null : (result.description ?? 'unknown') })
-      .eq('id', body.log_id);
-  }
-
-  if (!result.ok) return json({ error: result.description ?? 'Telegram отклонил запрос' }, 502, origin);
-  return json({ ok: true }, 200, origin);
+  const { data: settings } = await admin.from('notification_settings').select('telegram_chat_id').eq('id', true).maybeSingle();
+  if (!settings?.telegram_chat_id) return json({ error: 'TELEGRAM_CHAT_NOT_CONFIGURED' }, 422, origin);
+  const text = '✅ <b>Phoenix</b>\nТестовое сообщение. Канал работает.';
+  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ chat_id: settings.telegram_chat_id, text: escapeHtml(text), parse_mode:'HTML', disable_web_page_preview:true }), signal: controller.signal });
+    const result = await res.json() as { ok?: boolean };
+    if (!res.ok || !result.ok) return json({ error:'TELEGRAM_SEND_FAILED' }, 502, origin);
+    return json({ ok:true }, 200, origin);
+  } catch { return json({ error:'TELEGRAM_TIMEOUT' }, 504, origin); } finally { clearTimeout(timer); }
 });
