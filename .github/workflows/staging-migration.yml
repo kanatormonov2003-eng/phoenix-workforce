@@ -1,0 +1,36 @@
+name: staging-migration
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging:
+    # Fork PRs do not receive secrets. They still get CI from security.yml.
+    if: ${{ github.event_name == 'workflow_dispatch' || (secrets.SUPABASE_ACCESS_TOKEN != '' && secrets.SUPABASE_STAGING_PROJECT_REF != '') }}
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Supabase version
+        run: supabase --version
+      - name: Link staging project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase link --project-ref "${{ secrets.SUPABASE_STAGING_PROJECT_REF }}"
+      - name: Lint database
+        run: supabase db lint
+      - name: Validate migration plan
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase db push --dry-run
+      - name: Apply migrations to staging only
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase db push

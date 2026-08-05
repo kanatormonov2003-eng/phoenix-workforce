@@ -1,0 +1,64 @@
+import { adminClient } from '../_shared/auth.ts';
+import { json } from '../_shared/cors.ts';
+
+const MAX_JOBS = 20;
+const TELEGRAM_TIMEOUT_MS = 8000;
+const CRON_SECRET = Deno.env.get('CRON_SECRET');
+
+type Job = { id: string; kind: string; payload: Record<string, unknown>; attempts: number };
+
+function escapeHtml(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+}
+
+function textFor(job: Job): string {
+  const p = job.payload;
+  const name = escapeHtml(String(p.full_name ?? 'Оператор'));
+  const project = escapeHtml(String(p.project ?? '—'));
+  const at = escapeHtml(String(p.at ?? '—'));
+  const minutes = escapeHtml(String(p.minutes ?? '—'));
+  switch (job.kind) {
+    case 'shift_started': return `🟢 <b>${name} вышел на линию</b>\nПроект: ${project}\nВремя: ${at}`;
+    case 'shift_ended': return `🔴 <b>${name} завершил смену</b>\nОтработано: ${minutes} мин\nВремя: ${at}`;
+    case 'late': return `⚠️ <b>Контроль линии</b>\nОператор: ${name}\nНачало смены: ${at}\nСтатус: не вышел`;
+    default: return `ℹ️ <b>Phoenix Workforce</b>\nСобытие: ${escapeHtml(job.kind)}`;
+  }
+}
+
+async function send(job: Job, token: string): Promise<string | null> {
+  const chatId = String(job.payload.chat_id ?? '');
+  if (!chatId) return 'CHAT_ID_MISSING';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TELEGRAM_TIMEOUT_MS);
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: textFor(job), parse_mode: 'HTML', disable_web_page_preview: true }),
+      signal: controller.signal,
+    });
+    const result = await response.json() as { ok?: boolean; description?: string };
+    return response.ok && result.ok ? null : (result.description ?? 'TELEGRAM_SEND_FAILED');
+  } catch (error) {
+    return error instanceof DOMException && error.name === 'AbortError' ? 'TELEGRAM_TIMEOUT' : 'TELEGRAM_NETWORK_ERROR';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.headers.get('x-cron-secret') !== CRON_SECRET) return json({ error: 'FORBIDDEN' }, 403, null);
+  const token = Deno.env.get('TELEGRAM_BOT_TOKEN');
+  if (!token) return json({ error: 'TELEGRAM_NOT_CONFIGURED' }, 503, null);
+  const admin = adminClient();
+  const { data, error } = await admin.rpc('claim_notification_jobs', { p_limit: MAX_JOBS });
+  if (error) return json({ error: 'QUEUE_CLAIM_FAILED' }, 500, null);
+  let delivered = 0;
+  for (const job of (data ?? []) as Job[]) {
+    const failure = await send(job, token);
+    const result = await admin.rpc('complete_notification_job', { p_id: job.id, p_success: !failure, p_error: failure });
+    if (result.error) continue;
+    if (!failure) delivered += 1;
+  }
+  return json({ claimed: data?.length ?? 0, delivered }, 200, null);
+});
