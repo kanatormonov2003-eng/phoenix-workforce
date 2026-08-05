@@ -28,8 +28,8 @@ export interface Database {
       admin_set_block:{Args:{p_employee_id:string;p_blocked:boolean;p_reason?:string|null};Returns:Database['public']['Tables']['employees']['Row']};
       admin_dashboard_stats:{Args:{p_date?:string};Returns:Json};
       admin_monthly_report:{Args:{p_from:string;p_to:string};Returns:{employee_id:string;full_name:string;project:string;shifts_count:number;base_hours:number;extra_hours:number;total_hours:number}[]};
-      claim_notification_job:{Args:{p_limit?:number};Returns:Database['public']['Tables']['notification_jobs']['Row'][]>;
-      claim_notification_jobs:{Args:{p_limit?:number};Returns:Database['public']['Tables']['notification_jobs']['Row'][]>;
+      claim_notification_job:{Args:{p_limit?:number};Returns:Database['public']['Tables']['notification_jobs']['Row'][]};
+      claim_notification_jobs:{Args:{p_limit?:number};Returns:Database['public']['Tables']['notification_jobs']['Row'][]};
       complete_notification_job:{Args:{p_id:string;p_success:boolean;p_error?:string|null};Returns:null};
       is_admin:{Args:Record<string,never>;Returns:boolean};
       current_employee_id:{Args:Record<string,never>;Returns:string|null};
