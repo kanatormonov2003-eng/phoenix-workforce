@@ -14,6 +14,7 @@ The hardening branch addresses the highest-risk application issues: least-privil
 - Added `notification_jobs` with retry-oriented state fields.
 - Telegram test sending uses the database-configured chat and a fixed message, with timeout and generic errors.
 - Added CI for lint, typecheck, build, and Supabase DB lint.
+- Added issue tracking for the remaining worker, timezone, pagination, and executable test work.
 
 ## BLOCKED: manual actions
 
