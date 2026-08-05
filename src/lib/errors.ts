@@ -12,18 +12,19 @@ const CODE_MESSAGES: Record<string, string> = {
   'User already registered': 'Пользователь с таким email уже существует.',
 };
 
+function normalizeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try { return JSON.stringify(error) || 'Неизвестная ошибка.'; } catch { return 'Неизвестная ошибка.'; }
+}
+
 export function humanizeError(error: unknown): string {
   if (!error) return 'Неизвестная ошибка.';
-
-  if (error instanceof AuthError || error instanceof PostgrestError) {
-    const key = Object.keys(CODE_MESSAGES).find((k) => error.message.includes(k));
-    if (key) return CODE_MESSAGES[key] as string;
+  const message = normalizeError(error);
+  if (error instanceof AuthError || error instanceof PostgrestError || error instanceof Error) {
+    const key = Object.keys(CODE_MESSAGES).find((candidate) => message.includes(candidate));
+    if (key) return CODE_MESSAGES[key] ?? message;
   }
-  if (error instanceof Error) {
-    const key = Object.keys(CODE_MESSAGES).find((k) => error.message.includes(k));
-    if (key) return CODE_MESSAGES[key] as string;
-    if (error.message.includes('Failed to fetch')) return 'Нет связи с сервером. Проверьте интернет.';
-    return error.message;
-  }
-  return String(error);
+  if (message.includes('Failed to fetch')) return 'Нет связи с сервером. Проверьте интернет.';
+  return message;
 }
