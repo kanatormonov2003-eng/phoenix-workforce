@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { FunctionsResponse, PostgrestResponse, PostgrestSingleResponse } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import type { EmployeeCreateInput, EmployeeUpdateInput } from '@/schemas/employee.schema';
@@ -14,18 +15,18 @@ export function useProjects() {
     queryKey: ['projects'],
     staleTime: 5 * 60_000,
     queryFn: async (): Promise<Project[]> => {
-      const { data, error } = await supabase.from('projects').select('*').eq('is_active', true).order('name');
-      if (error) throw error;
-      return data ?? [];
+      const result: PostgrestResponse<Project> = await supabase.from('projects').select('*').eq('is_active', true).order('name');
+      if (result.error) throw result.error;
+      return result.data;
     },
   });
 }
 
 async function invokeAdmin(fn: string, body: AdminRequest | EmployeeCreateInput): Promise<AdminResponse> {
-  const { data, error } = await supabase.functions.invoke<AdminResponse>(fn, { body });
-  if (error) throw error;
-  if (!data) throw new Error('EMPTY_ADMIN_RESPONSE');
-  return data;
+  const result: FunctionsResponse<AdminResponse> = await supabase.functions.invoke<AdminResponse>(fn, { body });
+  if (result.error) throw result.error;
+  if (!result.data) throw new Error('EMPTY_ADMIN_RESPONSE');
+  return result.data;
 }
 
 export function useCreateEmployee() {
@@ -44,24 +45,23 @@ export function useUpdateEmployee() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ employeeId, input }: { employeeId: string; input: EmployeeUpdateInput }) => {
-      const result = await supabase
+      const result: PostgrestSingleResponse<EmployeeUserId> = await supabase
         .from('employees')
         .select('user_id')
         .eq('id', employeeId)
         .maybeSingle();
-      const { data: employee, error: lookupError }: { data: EmployeeUserId | null; error: typeof result.error } = result;
-      if (lookupError) throw lookupError;
-      if (!employee) throw new Error('EMPLOYEE_NOT_FOUND');
-      const { error: pErr } = await supabase.from('profiles').update({ first_name: input.firstName, last_name: input.lastName }).eq('id', employee.user_id);
-      if (pErr) throw pErr;
-      const { error } = await supabase.from('employees').update({
+      if (result.error) throw result.error;
+      if (!result.data) throw new Error('EMPLOYEE_NOT_FOUND');
+      const profileResult: PostgrestResponse<never> = await supabase.from('profiles').update({ first_name: input.firstName, last_name: input.lastName }).eq('id', result.data.user_id);
+      if (profileResult.error) throw profileResult.error;
+      const employeeResult: PostgrestResponse<never> = await supabase.from('employees').update({
         project_id: input.projectId,
         default_schedule: input.schedule,
         default_start: input.defaultStart,
         default_end: input.defaultEnd,
         phone: input.phone || null,
       }).eq('id', employeeId);
-      if (error) throw error;
+      if (employeeResult.error) throw employeeResult.error;
       if (input.password) await invokeAdmin('admin-reset-password', { employeeId, password: input.password });
     },
     onSuccess: () => {
@@ -75,8 +75,8 @@ export function useToggleBlock() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ employeeId, blocked, reason }: { employeeId: string; blocked: boolean; reason?: string }) => {
-      const { error } = await supabase.rpc('admin_set_block', { p_employee_id: employeeId, p_blocked: blocked, p_reason: reason ?? null });
-      if (error) throw error;
+      const result: PostgrestResponse<never> = await supabase.rpc('admin_set_block', { p_employee_id: employeeId, p_blocked: blocked, p_reason: reason ?? null });
+      if (result.error) throw result.error;
     },
     onSuccess: (_d, v) => {
       toast[v.blocked ? 'warning' : 'success'](v.blocked ? 'Доступ отозван' : 'Доступ восстановлен');
