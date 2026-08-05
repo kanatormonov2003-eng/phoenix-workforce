@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Environment secrets
+.env
+.env.local
+.env.*
+!.env.example
+
+# Build
+dist/
+.vite/
+
+# Supabase temporary files
+supabase/.temp/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+# dependencies
+node_modules/
+
+# environment
+.env
+.env.local
+.env.*.local
+
+# Supabase
+supabase/.temp/
+
+# build
+dist/
+
+# logs
+*.log
